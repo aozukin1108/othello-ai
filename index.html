@@ -1,1 +1,442 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>オセロゲーム（AI対戦）</title>
+    <style>
+        /* 全体のスタイル */
+        body {
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
 
+        /* ゲームボードのスタイル */
+        .board {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 2px;
+            background-color: #2e8b57;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+            margin-bottom: 20px;
+        }
+
+        /* マスのスタイル */
+        .cell {
+            width: 60px;
+            height: 60px;
+            background-color: #2e8b57;
+            border: 1px solid #1a5c36;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            position: relative;
+            transition: all 0.2s;
+        }
+
+        /* 石のスタイル */
+        .disc {
+            width: 80%;
+            height: 80%;
+            border-radius: 50%;
+            position: relative;
+            z-index: 1;
+        }
+
+        .black {
+            background-color: #000;
+            box-shadow: inset 0 0 8px rgba(255, 255, 255, 0.5);
+        }
+
+        .white {
+            background-color: #fff;
+            box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.3);
+        }
+
+        /* 有効な手のハイライト */
+        .valid-move {
+            background-color: #f0e68c;
+            cursor: pointer;
+        }
+
+        .valid-move:hover {
+            background-color: #ffeb3b;
+        }
+
+        /* ゲーム情報のスタイル */
+        .game-info {
+            text-align: center;
+            margin-bottom: 20px;
+            background-color: #fff;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            max-width: 500px;
+        }
+
+        .scores {
+            display: flex;
+            justify-content: space-around;
+            margin: 10px 0;
+            font-size: 1.2em;
+        }
+
+        .current-player {
+            font-weight: bold;
+            margin: 10px 0;
+            font-size: 1.2em;
+        }
+
+        .message {
+            margin: 10px 0;
+            min-height: 24px;
+            color: #d32f2f;
+            font-weight: bold;
+        }
+
+        /* ボタンのスタイル */
+        button {
+            background-color: #4caf50;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 10px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        /* レスポンシブデザイン */
+        @media (max-width: 600px) {
+            .cell {
+                width: 35px;
+                height: 35px;
+            }
+            
+            .game-info {
+                padding: 10px;
+            }
+            
+            .scores {
+                font-size: 1em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>オセロゲーム</h1>
+    
+    <div class="game-info">
+        <div class="scores">
+            <div>黒（あなた）: <span id="black-score">2</span></div>
+            <div>白（AI）: <span id="white-score">2</span></div>
+        </div>
+        <div class="current-player" id="current-player">あなたの番です（黒）</div>
+        <div class="message" id="message"></div>
+        <button id="reset-btn">ゲームをリセット</button>
+    </div>
+    
+    <div class="board" id="board"></div>
+
+    <script>
+        // ゲームの状態を管理するオブジェクト
+        const game = {
+            board: Array(8).fill().map(() => Array(8).fill(null)),
+            currentPlayer: 'black', // 'black' または 'white'
+            gameOver: false,
+            directions: [
+                { dr: -1, dc: -1 }, { dr: -1, dc: 0 }, { dr: -1, dc: 1 },
+                { dr: 0, dc: -1 },                     { dr: 0, dc: 1 },
+                { dr: 1, dc: -1 },  { dr: 1, dc: 0 },  { dr: 1, dc: 1 }
+            ],
+
+            // ゲームの初期化
+            init() {
+                this.board = Array(8).fill().map(() => Array(8).fill(null));
+                this.board[3][3] = 'white';
+                this.board[3][4] = 'black';
+                this.board[4][3] = 'black';
+                this.board[4][4] = 'white';
+                this.currentPlayer = 'black';
+                this.gameOver = false;
+                this.updateUI();
+            },
+
+            // 有効な手をチェック
+            isValidMove(row, col, player = this.currentPlayer) {
+                if (this.board[row][col] !== null) return false;
+                
+                const opponent = player === 'black' ? 'white' : 'black';
+                let isValid = false;
+                
+                for (const dir of this.directions) {
+                    let r = row + dir.dr;
+                    let c = col + dir.dc;
+                    let foundOpponent = false;
+                    
+                    while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+                        if (this.board[r][c] === opponent) {
+                            foundOpponent = true;
+                        } else if (this.board[r][c] === player && foundOpponent) {
+                            isValid = true;
+                            break;
+                        } else {
+                            break;
+                        }
+                        r += dir.dr;
+                        c += dir.dc;
+                    }
+                    
+                    if (isValid) break;
+                }
+                
+                return isValid;
+            },
+
+            // 石を置く
+            makeMove(row, col) {
+                if (this.gameOver || !this.isValidMove(row, col)) {
+                    return false;
+                }
+                
+                const opponent = this.currentPlayer === 'black' ? 'white' : 'black';
+                this.board[row][col] = this.currentPlayer;
+                let flipped = 0;
+                
+                // すべての方向をチェックして石をひっくり返す
+                for (const dir of this.directions) {
+                    let r = row + dir.dr;
+                    let c = col + dir.dc;
+                    const toFlip = [];
+                    let validDirection = false;
+                    
+                    while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+                        if (this.board[r][c] === opponent) {
+                            toFlip.push({r, c});
+                        } else if (this.board[r][c] === this.currentPlayer && toFlip.length > 0) {
+                            validDirection = true;
+                            break;
+                        } else {
+                            break;
+                        }
+                        r += dir.dr;
+                        c += dir.dc;
+                    }
+                    
+                    if (validDirection) {
+                        for (const pos of toFlip) {
+                            this.board[pos.r][pos.c] = this.currentPlayer;
+                            flipped++;
+                        }
+                    }
+                }
+                
+                // 手番を交代
+                this.currentPlayer = opponent;
+                
+                // 次のプレイヤーが有効な手を持っているかチェック
+                if (!this.hasValidMoves(this.currentPlayer)) {
+                    this.currentPlayer = this.currentPlayer === 'black' ? 'white' : 'black';
+                    
+                    // どちらのプレイヤーも有効な手を持たない場合、ゲーム終了
+                    if (!this.hasValidMoves(this.currentPlayer)) {
+                        this.gameOver = true;
+                    } else {
+                        this.showMessage(`${this.currentPlayer === 'black' ? '黒' : '白'}のパスです`);
+                    }
+                }
+                
+                this.updateUI();
+                
+                // AIのターンの場合
+                if (!this.gameOver && this.currentPlayer === 'white') {
+                    setTimeout(() => this.makeAIMove(), 500);
+                }
+                
+                return true;
+            },
+
+            // AIの手を決定（最も多くの石を取れる手を選ぶ）
+            makeAIMove() {
+                let bestMove = null;
+                let maxFlips = -1;
+                
+                // すべての有効な手をチェック
+                for (let r = 0; r < 8; r++) {
+                    for (let c = 0; c < 8; c++) {
+                        if (this.isValidMove(r, c, 'white')) {
+                            const flips = this.countFlips(r, c, 'white');
+                            if (flips > maxFlips) {
+                                maxFlips = flips;
+                                bestMove = { r, c };
+                            }
+                        }
+                    }
+                }
+                
+                if (bestMove) {
+                    this.makeMove(bestMove.r, bestMove.c);
+                }
+            },
+
+            // 特定の手で裏返せる石の数をカウント
+            countFlips(row, col, player) {
+                const opponent = player === 'black' ? 'white' : 'black';
+                let totalFlips = 0;
+                
+                for (const dir of this.directions) {
+                    let r = row + dir.dr;
+                    let c = col + dir.dc;
+                    let flips = 0;
+                    let foundOpponent = false;
+                    
+                    while (r >= 0 && r < 8 && c >= 0 && c < 8) {
+                        if (this.board[r][c] === opponent) {
+                            flips++;
+                            foundOpponent = true;
+                        } else if (this.board[r][c] === player && foundOpponent) {
+                            totalFlips += flips;
+                            break;
+                        } else {
+                            break;
+                        }
+                        r += dir.dr;
+                        c += dir.dc;
+                    }
+                }
+                
+                return totalFlips;
+            },
+
+            // 有効な手があるかチェック
+            hasValidMoves(player) {
+                for (let r = 0; r < 8; r++) {
+                    for (let c = 0; c < 8; c++) {
+                        if (this.isValidMove(r, c, player)) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            },
+
+            // スコアを計算
+            calculateScores() {
+                let black = 0, white = 0;
+                for (let r = 0; r < 8; r++) {
+                    for (let c = 0; c < 8; c++) {
+                        if (this.board[r][c] === 'black') black++;
+                        else if (this.board[r][c] === 'white') white++;
+                    }
+                }
+                return { black, white };
+            },
+
+            // ゲームの勝敗を判定
+            checkGameOver() {
+                if (this.gameOver) {
+                    const scores = this.calculateScores();
+                    if (scores.black > scores.white) {
+                        return `ゲーム終了！ 黒の勝ち (${scores.black} - ${scores.white})`;
+                    } else if (scores.white > scores.black) {
+                        return `ゲーム終了！ 白の勝ち (${scores.white} - ${scores.black})`;
+                    } else {
+                        return `ゲーム終了！ 引き分け (${scores.black} - ${scores.white})`;
+                    }
+                }
+                return '';
+            },
+
+            // UIを更新
+            updateUI() {
+                const boardElement = document.getElementById('board');
+                boardElement.innerHTML = '';
+                
+                // ボードを描画
+                for (let r = 0; r < 8; r++) {
+                    for (let c = 0; c < 8; c++) {
+                        const cell = document.createElement('div');
+                        cell.className = 'cell';
+                        cell.dataset.row = r;
+                        cell.dataset.col = c;
+                        
+                        // 有効な手をハイライト
+                        if (this.isValidMove(r, c)) {
+                            cell.classList.add('valid-move');
+                        }
+                        
+                        // 石を配置
+                        if (this.board[r][c]) {
+                            const disc = document.createElement('div');
+                            disc.className = `disc ${this.board[r][c]}`;
+                            cell.appendChild(disc);
+                        }
+                        
+                        // クリックイベントを追加
+                        cell.addEventListener('click', () => {
+                            if (this.currentPlayer === 'black' && !this.gameOver) {
+                                this.makeMove(r, c);
+                            }
+                        });
+                        
+                        boardElement.appendChild(cell);
+                    }
+                }
+                
+                // スコアを更新
+                const scores = this.calculateScores();
+                document.getElementById('black-score').textContent = scores.black;
+                document.getElementById('white-score').textContent = scores.white;
+                
+                // 現在のプレイヤーを表示
+                if (!this.gameOver) {
+                    document.getElementById('current-player').textContent = 
+                        this.currentPlayer === 'black' ? 'あなたの番です（黒）' : 'AIの番です（白）';
+                } else {
+                    document.getElementById('current-player').textContent = '';
+                }
+                
+                // ゲームオーバーの場合はメッセージを表示
+                const message = this.checkGameOver();
+                if (message) {
+                    this.showMessage(message);
+                }
+            },
+
+            // メッセージを表示
+            showMessage(msg) {
+                const messageElement = document.getElementById('message');
+                messageElement.textContent = msg;
+            }
+        };
+
+        // ページ読み込み時にゲームを初期化
+        window.onload = function() {
+            game.init();
+            
+            // リセットボタンのイベントリスナー
+            document.getElementById('reset-btn').addEventListener('click', () => {
+                game.init();
+            });
+        };
+    </script>
+</body>
+</html>
